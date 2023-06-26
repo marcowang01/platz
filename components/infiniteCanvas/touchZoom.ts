@@ -56,15 +56,6 @@
       timeoutId = setTimeout(() => fn.apply(args), ms);
     };
   }
-
-  // config for zoom and pan bounds
-  let MIN_ZOOM = 0.1;
-  let MAX_ZOOM = 10;
-
-  // let this.#config.xMinMax[0] = -100;
-  // let this.#config.xMinMax[1] = 100;
-  // let this.#config.yMinMax[0] = -1000;
-  // let this.#config.yMinMax[1] = 500;
   
   // let IS_FINITE = false;
 
@@ -74,7 +65,7 @@
     #scrollingAnchor: HTMLElement | Document;
     #gesture: Gesture;
     #resizeObserver: ResizeObserver;
-  
+    // bounds for the current viewport in the coordinate system of the canvas
     #bounds = {
       minX: 0,
       maxX: 0,
@@ -89,7 +80,21 @@
     #wheelLastTimeStamp = 0;
   
     #callbacks = new Set<(manual: boolean) => void>();
-  
+    // limits on how far the canvas can be panned and zoomed
+    #limits = {
+      // pan limits
+      minX: -Infinity,
+      maxX: Infinity,
+      minY: -Infinity,
+      maxY: Infinity,
+      // zoom limits
+      minZoom: 0.1,
+      maxZoom: 10,
+      // how horizontally far the user can scroll before we start panning
+      // 1 --> 45 deg, 0 --> no horizontal scrolling, infinity --> no cushioning
+      horizontalScrollTolerance: 1, 
+    }
+
     isPinching = false;
     center: number[] = [0, 0];
     zoom: number = 1;
@@ -100,10 +105,16 @@
       // console.log(util.inspect(node, false, 1, true /* enable colors */))
       this.#node = node;
       this.#config = config;
-      if (config?.zoomMinMax){
-        MIN_ZOOM = config.zoomMinMax[0];
-        MAX_ZOOM = config.zoomMinMax[1];
-      } 
+      this.#limits = {
+        minX: config?.xMinMax?.[0] ? config.xMinMax[0] : this.#limits.minX,
+        maxX: config?.xMinMax?.[1] ? config.xMinMax[1] : this.#limits.maxX,
+        minY: config?.yMinMax?.[0] ? config.yMinMax[0] : this.#limits.minY,
+        maxY: config?.yMinMax?.[1] ? config.yMinMax[1] : this.#limits.maxY,
+        minZoom: config?.zoomMinMax?.[0] ? config.zoomMinMax[0] : this.#limits.minZoom,
+        maxZoom: config?.zoomMinMax?.[1] ? config.zoomMinMax[1] : this.#limits.maxZoom,
+        horizontalScrollTolerance: config?.horizontalScrollTolerance ? config.horizontalScrollTolerance : this.#limits.horizontalScrollTolerance,
+      }
+
       this.#scrollingAnchor = getNearestScrollableContainer(node);
       // @ts-ignore
       document.addEventListener("gesturestart", this.#preventGesture);
@@ -135,7 +146,7 @@
           pinch: {
             from: [this.zoom, 0],
             scaleBounds: () => {
-              return { from: this.zoom, max: MAX_ZOOM, min: MIN_ZOOM };
+              return { from: this.zoom, max: this.#limits.maxZoom, min: this.#limits.minZoom };
             },
           },
           drag: {
@@ -228,7 +239,7 @@
         const delta = z * 0.618;
   
         let newZoom = (1 - delta / 80) * this.zoom;
-        newZoom = Vec.clamp(newZoom, MIN_ZOOM, MAX_ZOOM);
+        newZoom = Vec.clamp(newZoom, this.#limits.minZoom, this.#limits.maxZoom);
   
         const offset = Vec.sub(point, [
           this.#bounds.width / 2,
@@ -238,8 +249,8 @@
 
         let newCenter = Vec.add(this.center, movement);
         // clamp to min/max if defined in config
-        newCenter[0] = this.#config?.xMinMax ? Vec.clamp(newCenter[0], ...this.#config.xMinMax) : newCenter[0];
-        newCenter[1] = this.#config?.yMinMax ? Vec.clamp(newCenter[1], ...this.#config.yMinMax) : newCenter[1];
+        newCenter[0] = Vec.clamp(newCenter[0], this.#limits.minX, this.#limits.maxX);
+        newCenter[1] = Vec.clamp(newCenter[1], this.#limits.minY, this.#limits.maxY);
         this.center = newCenter;
 
         // this.center = Vec.add(this.center, movement);
@@ -262,11 +273,14 @@
       if (Vec.isEqual(delta, [0, 0])) return;
 
       let newCenter = Vec.add(this.center, Vec.div(delta, this.zoom));
-      // clamp to min/max if defined in config
-      newCenter[0] = this.#config?.xMinMax ? Vec.clamp(newCenter[0], ...this.#config.xMinMax) : newCenter[0];
-      newCenter[1] = this.#config?.yMinMax ? Vec.clamp(newCenter[1], ...this.#config.yMinMax) : newCenter[1];
+      
+      if (Math.abs(delta[0]) * this.#limits.horizontalScrollTolerance > Math.abs(delta[1])) {
+        newCenter[0] = Vec.clamp(newCenter[0], this.#limits.minX, this.#limits.maxX);
+      } else {
+        newCenter[0] = this.center[0];
+      }
+      newCenter[1] = Vec.clamp(newCenter[1], this.#limits.minY, this.#limits.maxY);
       this.center = newCenter;
-      // this.center = Vec.add(this.center, Vec.div(delta, this.zoom));
       this.#moved();
     };
   
@@ -301,12 +315,12 @@
       
       let newCenter = Vec.add(this.center, Vec.div(trueDelta, this.zoom * 2));
       // clamp to min/max if defined in config
-      newCenter[0] = this.#config?.xMinMax ? Vec.clamp(newCenter[0], ...this.#config.xMinMax) : newCenter[0];
-      newCenter[1] = this.#config?.yMinMax ? Vec.clamp(newCenter[1], ...this.#config.yMinMax) : newCenter[1];
+      newCenter[0] = Vec.clamp(newCenter[0], this.#limits.minX, this.#limits.maxX);
+      newCenter[1] = Vec.clamp(newCenter[1], this.#limits.minY, this.#limits.maxY);
 
       this.center = newCenter;
       // this.center = Vec.add(this.center, Vec.div(trueDelta, this.zoom * 2));
-      this.zoom = Vec.clamp(this.zoom * zoomLevel, MIN_ZOOM, MAX_ZOOM);
+      this.zoom = Vec.clamp(this.zoom * zoomLevel, this.#limits.minZoom, this.#limits.maxZoom);
       this.#moved();
     };
   
@@ -330,8 +344,8 @@
 
       let newCenter = Vec.sub(this.center, Vec.div(delta, this.zoom));
       // clamp to min/max if defined in config
-      newCenter[0] = this.#config?.xMinMax ? Vec.clamp(newCenter[0], ...this.#config.xMinMax) : newCenter[0];
-      newCenter[1] = this.#config?.yMinMax ? Vec.clamp(newCenter[1], ...this.#config.yMinMax) : newCenter[1];
+      newCenter[0] = Vec.clamp(newCenter[0], this.#limits.minX, this.#limits.maxX);
+      newCenter[1] = Vec.clamp(newCenter[1], this.#limits.minY, this.#limits.maxY);
       this.center = newCenter;
 
       // this.center = Vec.sub(this.center, Vec.div(delta, this.zoom));

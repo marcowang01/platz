@@ -3,13 +3,14 @@ import InfiniteCanvas from '../components/infiniteCanvas/infiniteCanvas'
 import HomePage from '../components/homeContent'
 import { touchZoomConfig } from '../components/infiniteCanvas/infiniteDiv'
 
-// TODO: styled components?
 
 // TODO: add 3 layers abstraction, can just pass in component list into big container?
 // TODO: abstract out components --> more like library the better it is?
 // TODO: on zoom, can pan actual limit on two sides
 // TODO: make css not lag please 
 // TODO: make documentation
+// TODO: abstract out infinite canvas, add thing for scrolling, font image optimization
+// run test page to test speed out 
 
 export const title = "Return to Home";
 

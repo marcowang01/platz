@@ -5,6 +5,7 @@ export interface touchZoomConfig {
   yMinMax?: [number, number],
   xMinMax?: [number, number],
   scrollDirection?: 'vertical' | 'horizontal',
+  horizontalScrollTolerance?: number,
 }
 export interface infProps {
   pos?: [number, number],
